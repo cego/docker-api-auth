@@ -1,0 +1,30 @@
+name: Release binaries
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  releases-matrix:
+    name: Release Go Binary
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        goos: [linux]
+        goarch: [amd64,arm64]
+    steps:
+      - name: Git checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: '0'
+
+      - name: Build release
+        uses: wangyoucao577/go-release-action@v1.53
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          goos: ${{ matrix.goos }}
+          goarch: ${{ matrix.goarch }}
+          project_path: "."
+          binary_name: "caddy"
+          build_command: "xcaddy build"
+          sha256sum: true
