@@ -32,5 +32,5 @@ jobs:
           project_path: "."
           binary_name: "caddy"
           pre_command: "go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest"
-          build_command: "xcaddy build --with github.com/cego/caddy-docker-api-auth@latest=./"
+          build_command: "xcaddy build --with github.com/cego/caddy-docker-api-auth@latest=./ --"
           sha256sum: true
