@@ -21,9 +21,6 @@ jobs:
         with:
           go-version: stable
 
-      - name: Golangci-lint
-        uses: golangci/golangci-lint-action@v8.0.0
-
       - name: Install xcaddy
         run: go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
 

@@ -16,21 +16,18 @@ jobs:
     steps:
       - name: Git checkout
         uses: actions/checkout@v5
-        with:
-          fetch-depth: '0'
 
       - uses: actions/setup-go@v6
         with:
           go-version: stable
 
-      - name: Build release
-        uses: wangyoucao577/go-release-action@v1.53
+      - name: Install xcaddy
+        run: go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+      - name: Build xcaddy with plugin
+        run: xcaddy build --with github.com/cego/caddy-docker-api-auth@latest=./ --output caddy-${{ matrix.goos }}-${{ matrix.goarch }}
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          goos: ${{ matrix.goos }}
-          goarch: ${{ matrix.goarch }}
-          project_path: "."
-          binary_name: "caddy"
-          pre_command: "go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest"
-          build_command: "xcaddy build --with github.com/cego/caddy-docker-api-auth@latest=./ --"
-          sha256sum: true
+          files: caddy-${{ matrix.goos }}-${{ matrix.goarch }}
