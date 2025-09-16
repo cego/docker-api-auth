@@ -18,6 +18,13 @@ jobs:
         with:
           fetch-depth: '0'
 
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Install xcaddy
+        run: go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
       - name: Build release
         uses: wangyoucao577/go-release-action@v1.53
         with:
@@ -26,5 +33,5 @@ jobs:
           goarch: ${{ matrix.goarch }}
           project_path: "."
           binary_name: "caddy"
-          build_command: "xcaddy build"
+          build_command: "xcaddy build --with github.com/cego/caddy-docker-api-auth@latest=./"
           sha256sum: true
