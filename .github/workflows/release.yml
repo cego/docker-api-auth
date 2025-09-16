@@ -1,5 +1,8 @@
 name: Release binaries
 
+permissions:
+  contents: write
+
 on:
   release:
     types: [created]
@@ -31,4 +34,3 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: caddy-${{ matrix.goos }}-${{ matrix.goarch }}
-          token: ${{ secrets.GITHUB_TOKEN }}
