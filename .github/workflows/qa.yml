@@ -11,6 +11,25 @@ on:
 
 jobs:
 
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git checkout
+        uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Golangci-lint
+        uses: golangci/golangci-lint-action@v8.0.0
+
+      - name: Install xcaddy
+        run: go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+
+      - name: Build xcaddy with plugin
+        run: xcaddy build --with github.com/cego/caddy-docker-api-auth@latest=./
+
   golangci-lint:
     runs-on: ubuntu-latest
     steps:
