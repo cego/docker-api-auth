@@ -36,18 +36,21 @@ func NewACL(aclFilePath string) *ACL {
 	return acl
 }
 
-func verifyPasswordHash(password string, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
-	return err == nil
-}
-
-func (a *ACL) MatchNetworkAttachment(username string, password string, networkName string) bool {
+func (a *ACL) VerifyUser(username string, password string) bool {
 	matches := lo.Filter(a.Deployers, func(item *ACLDeployer, _ int) bool {
 		if item.Username != username {
 			return false
 		}
 
-		if !verifyPasswordHash(password, item.PasswordHash) {
+		err := bcrypt.CompareHashAndPassword([]byte(item.PasswordHash), []byte(password))
+		return err == nil
+	})
+	return len(matches) > 0
+}
+
+func (a *ACL) MatchNetworkAttachment(username string, networkName string) bool {
+	matches := lo.Filter(a.Deployers, func(item *ACLDeployer, _ int) bool {
+		if item.Username != username {
 			return false
 		}
 
@@ -59,13 +62,9 @@ func (a *ACL) MatchNetworkAttachment(username string, password string, networkNa
 	return len(matches) > 0
 }
 
-func (a *ACL) MatchServicePrefix(username string, password string, serviceName string) bool {
+func (a *ACL) MatchServicePrefix(username string, serviceName string) bool {
 	matches := lo.Filter(a.Deployers, func(item *ACLDeployer, _ int) bool {
 		if item.Username != username {
-			return false
-		}
-
-		if !verifyPasswordHash(password, item.PasswordHash) {
 			return false
 		}
 

@@ -2,24 +2,24 @@ package guards
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"regexp"
 
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/cego/caddy-docker-api-auth/internal"
-)
-
-// Interface guards
-var (
-	_ caddyhttp.MiddlewareHandler = (*ServicesEdit)(nil)
+	"github.com/moby/moby/client"
+	"go.uber.org/zap"
 )
 
 type ServicesEdit struct {
-	acl     *internal.ACL
-	regexps []*regexp.Regexp
+	ctx       context.Context
+	logger    *zap.Logger
+	acl       *internal.ACL
+	dockerApi *client.Client
+	regexps   []*regexp.Regexp
 }
 
 type ServiceDefTaskTemplateNetwork struct {
@@ -35,12 +35,12 @@ type ServiceDef struct {
 	TaskTemplate *ServiceDefTaskTemplate
 }
 
-func NewServicesEdit(acl *internal.ACL) *ServicesEdit {
+func NewServicesEdit(ctx context.Context, logger *zap.Logger, acl *internal.ACL, dockerApi *client.Client) *ServicesEdit {
 	regexps := []*regexp.Regexp{
 		regexp.MustCompile("/.*?/services/.*?/update"),
 		regexp.MustCompile("/.*?/services/create"),
 	}
-	return &ServicesEdit{acl, regexps}
+	return &ServicesEdit{ctx, logger, acl, dockerApi, regexps}
 }
 
 func (n *ServicesEdit) Matches(path string) bool {
@@ -52,47 +52,54 @@ func (n *ServicesEdit) Matches(path string) bool {
 	return false
 }
 
-func (n *ServicesEdit) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+func (n *ServicesEdit) findNetworkName(networkID string) string {
+	inspect, err := n.dockerApi.NetworkInspect(n.ctx, networkID, client.NetworkInspectOptions{})
+	if err != nil {
+		n.logger.Debug("Could not find network name for '" + networkID + "'")
+		return ""
+	}
+	return inspect.Name
+}
+
+func (n *ServicesEdit) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler, username string) error {
+	logger := n.logger
+
 	buf, err := io.ReadAll(r.Body)
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		logger.Error("Failed to read request body", zap.Error(err))
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return err
 	}
-
-	username := r.Header.Get("X-Docker-Auth-Username")
-	password := r.Header.Get("X-Docker-Auth-Password")
-	if username == "" || password == "" {
-		fmt.Printf("X-Docker-Auth-Password or X-Docker-Auth-Username is empty or unspecified\n")
-		http.Error(w, "X-Docker-Auth-Password or X-Docker-Auth-Username is empty or unspecified", http.StatusUnauthorized)
-		return nil
-	}
-
 	rdr1 := io.NopCloser(bytes.NewBuffer(buf))
 	rdr2 := io.NopCloser(bytes.NewBuffer(buf))
+	r.Body = rdr2
 
 	service := new(ServiceDef)
 	err = json.NewDecoder(rdr1).Decode(&service)
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		logger.Error("Failed to parse json", zap.Error(err))
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return err
 	}
 
 	// Block service edit if service name doesn't have correct prefix according to the matched password
-	if !n.acl.MatchServicePrefix(username, password, service.Name) {
-		http.Error(w, "X-Docker-Auth-Password not permitted to change "+service.Name+", no service prefixes were matched", http.StatusForbidden)
+	if !n.acl.MatchServicePrefix(username, service.Name) {
+		msg := "'" + username + "' is not permitted to update or create '" + service.Name + "'"
+		logger.Error(msg)
+		http.Error(w, msg, http.StatusForbidden)
 		return nil
 	}
 
 	// Block service edit if network target isn't matched in network_attachments
 	for _, network := range service.TaskTemplate.Networks {
-		if !n.acl.MatchNetworkAttachment(username, password, network.Target) {
-			http.Error(w, "X-Docker-Auth-Password not permitted to attach to network "+network.Target+", no network_attachments were matched", http.StatusForbidden)
+		networkName := n.findNetworkName(network.Target)
+		if !n.acl.MatchNetworkAttachment(username, networkName) {
+			msg := "'" + username + "' is not permitted to attach to network '" + network.Target + "'"
+			logger.Error(msg)
+			http.Error(w, msg, http.StatusForbidden)
 			return nil
 		}
 	}
 
-	r.Body = rdr2
 	return next.ServeHTTP(w, r)
 }
