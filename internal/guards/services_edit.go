@@ -55,7 +55,7 @@ func (n *ServicesEdit) Matches(path string) bool {
 func (n *ServicesEdit) findNetworkName(networkID string) string {
 	inspect, err := n.dockerApi.NetworkInspect(n.ctx, networkID, client.NetworkInspectOptions{})
 	if err != nil {
-		n.logger.Debug("Could not find network name for '" + networkID + "'")
+		n.logger.Warn("Could not find network name for '" + networkID + "'")
 		return ""
 	}
 	return inspect.Name
