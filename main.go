@@ -99,7 +99,7 @@ func (d *DockerApiAuth) ServeHTTP(w http.ResponseWriter, r *http.Request, next c
 	}
 
 	if !d.acl.VerifyUser(username, password) {
-		msg := "Could not verify username/password"
+		msg := "Could not verify username/password for username '" + username + "'"
 		logger.Error(msg)
 		http.Error(w, msg, http.StatusUnauthorized)
 		return nil
