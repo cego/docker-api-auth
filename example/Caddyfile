@@ -2,7 +2,7 @@
         admin off
         auto_https off
         log {
-                level WARN
+                level INFO
         }
         servers {
                 trusted_proxies static private_ranges

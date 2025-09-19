@@ -56,7 +56,7 @@ func (d *DockerApiAuth) Validate() error {
 }
 
 func (d *DockerApiAuth) RefershConfig(logger *zap.Logger) {
-	logger.Debug("Refreshing acl config")
+	logger.Info("Refreshing acl config")
 }
 
 func (d *DockerApiAuth) Provision(c caddy.Context) error {
