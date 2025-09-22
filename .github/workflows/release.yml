@@ -8,14 +8,9 @@ on:
     types: [created]
 
 jobs:
-  releases-matrix:
-    name: Release Go Binary
+  releases-amd64:
+    name: Release Go Binary AMD64
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        goos: [linux]
-        goarch: [amd64,arm64]
-      fail-fast: false
     steps:
       - name: Git checkout
         uses: actions/checkout@v5
@@ -28,9 +23,9 @@ jobs:
         run: go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
 
       - name: Build xcaddy with plugin
-        run: xcaddy build --with github.com/cego/caddy-docker-api-auth@latest=./ --output caddy-docker-api-${{ matrix.goos }}-${{ matrix.goarch }}
+        run: xcaddy build --with github.com/cego/caddy-docker-api-auth@latest=./ --output caddy-docker-api-linux-amd64
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
-          files: caddy-docker-api-${{ matrix.goos }}-${{ matrix.goarch }}
+          files: caddy-docker-api-linux-amd64
