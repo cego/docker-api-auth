@@ -29,7 +29,7 @@ func newTestHandler(t *testing.T) http.Handler {
 	guard := guards.NewServicesEdit(context.Background(), testLogger, testACL, dockerApi)
 	backend := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 	return authMiddleware(testLogger, testACL, guard, backend)
 }

@@ -30,7 +30,7 @@ func main() {
 	}
 
 	logger, _ := zap.NewProduction()
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	acl := internal.NewACL(*aclFile)
 
@@ -71,7 +71,7 @@ func main() {
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
 		logger.Info("shutting down")
-		server.Close()
+		_ = server.Close()
 	}()
 
 	logger.Info("starting server", zap.String("listen", *listen), zap.String("docker-socket", *dockerSocket))
