@@ -1,11 +1,8 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
 name: Quality Assurance
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "initial"]
     tags-ignore: ["**"]
   pull_request:
 
@@ -21,11 +18,21 @@ jobs:
         with:
           go-version: stable
 
-      - name: Install xcaddy
-        run: go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
+      - name: Build
+        run: go build -o docker-api-auth .
 
-      - name: Build xcaddy with plugin
-        run: xcaddy build --with github.com/cego/caddy-docker-api-auth@latest=./
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git checkout
+        uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Test
+        run: go test ./...
 
   golangci-lint:
     runs-on: ubuntu-latest

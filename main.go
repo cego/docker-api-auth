@@ -1,113 +1,108 @@
-package docker_api_auth
+package main
 
 import (
+	"context"
+	"flag"
 	"fmt"
+	"net"
 	"net/http"
-	"time"
+	"net/http/httputil"
+	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/cego/caddy-docker-api-auth/internal"
 	"github.com/cego/caddy-docker-api-auth/internal/guards"
 	"github.com/moby/moby/client"
 	"go.uber.org/zap"
 )
 
-// Interface guards
-var (
-	_ caddy.Validator             = (*DockerApiAuth)(nil)
-	_ caddyhttp.MiddlewareHandler = (*DockerApiAuth)(nil)
-)
+func main() {
+	aclFile := flag.String("acl", "", "path to ACL YAML file")
+	listen := flag.String("listen", ":3004", "listen address")
+	dockerSocket := flag.String("docker-socket", "/var/run/docker.sock", "path to Docker socket")
+	flag.Parse()
 
-type DockerApiAuth struct {
-	ACLFile string `json:"acl_file,omitempty"`
-
-	acl               *internal.ACL
-	servicesEditGuard *guards.ServicesEdit
-	logger            *zap.Logger
-}
-
-func init() {
-	d := &DockerApiAuth{}
-	caddy.RegisterModule(d)
-	httpcaddyfile.RegisterHandlerDirective("docker_api_auth", func(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-		for h.Next() {
-			if !h.Args(&d.ACLFile) {
-				return d, h.ArgErr()
-			}
-		}
-		return d, nil
-	})
-}
-
-func (*DockerApiAuth) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{
-		ID:  "http.handlers.docker_api_auth",
-		New: func() caddy.Module { return new(DockerApiAuth) },
+	if *aclFile == "" {
+		fmt.Fprintln(os.Stderr, "error: --acl flag is required")
+		flag.Usage()
+		os.Exit(1)
 	}
-}
 
-func (d *DockerApiAuth) Validate() error {
-	if d.ACLFile == "" {
-		return fmt.Errorf("docker_api_auth <acl_file> not specified")
-	}
-	return nil
-}
+	logger, _ := zap.NewProduction()
+	defer logger.Sync()
 
-func (d *DockerApiAuth) RefershConfig(logger *zap.Logger) {
-	logger.Info("Refreshing acl config")
-}
+	acl := internal.NewACL(*aclFile)
 
-func (d *DockerApiAuth) Provision(c caddy.Context) error {
-	dockerApi, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	dockerApi, err := client.NewClientWithOpts(
+		client.WithHost("unix://"+*dockerSocket),
+		client.WithAPIVersionNegotiation(),
+	)
 	if err != nil {
-		return err
+		logger.Fatal("failed to create docker client", zap.Error(err))
 	}
 
-	d.logger = c.Logger(c.Module())
-	d.acl = internal.NewACL(d.ACLFile)
-	d.servicesEditGuard = guards.NewServicesEdit(c, d.logger, d.acl, dockerApi)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	servicesEditGuard := guards.NewServicesEdit(ctx, logger, acl, dockerApi)
+
+	proxy := &httputil.ReverseProxy{
+		Director: func(req *http.Request) {
+			req.URL.Scheme = "http"
+			req.URL.Host = "docker"
+		},
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", *dockerSocket)
+			},
+		},
+	}
+
+	handler := authMiddleware(logger, acl, servicesEditGuard, proxy)
+
+	server := &http.Server{
+		Addr:    *listen,
+		Handler: handler,
+	}
 
 	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				d.RefershConfig(d.logger)
-				return
-			case <-c.Done():
-				return
-			}
-		}
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		<-sigCh
+		logger.Info("shutting down")
+		server.Close()
 	}()
 
-	return nil
+	logger.Info("starting server", zap.String("listen", *listen), zap.String("docker-socket", *dockerSocket))
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.Fatal("server error", zap.Error(err))
+	}
 }
 
-func (d *DockerApiAuth) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
-	logger := d.logger
+func authMiddleware(logger *zap.Logger, acl *internal.ACL, servicesEditGuard *guards.ServicesEdit, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username := r.Header.Get("X-Docker-Auth-Username")
+		password := r.Header.Get("X-Docker-Auth-Password")
+		if username == "" || password == "" {
+			msg := "X-Docker-Auth-Username or X-Docker-Auth-Password is empty or unspecified"
+			logger.Error(msg)
+			http.Error(w, msg, http.StatusUnauthorized)
+			return
+		}
 
-	username := r.Header.Get("X-Docker-Auth-Username")
-	password := r.Header.Get("X-Docker-Auth-Password")
-	if username == "" || password == "" {
-		msg := "X-Docker-Auth-Username or X-Docker-Auth-Password is empty or unspecified"
-		logger.Error(msg)
-		http.Error(w, msg, http.StatusUnauthorized)
-		return nil
-	}
+		if !acl.VerifyUser(username, password) {
+			msg := "Could not verify username/password for username '" + username + "'"
+			logger.Error(msg)
+			http.Error(w, msg, http.StatusUnauthorized)
+			return
+		}
 
-	if !d.acl.VerifyUser(username, password) {
-		msg := "Could not verify username/password for username '" + username + "'"
-		logger.Error(msg)
-		http.Error(w, msg, http.StatusUnauthorized)
-		return nil
-	}
+		if servicesEditGuard.Matches(r.URL.Path) {
+			servicesEditGuard.ServeHTTP(w, r, next, username)
+			return
+		}
 
-	if d.servicesEditGuard.Matches(r.URL.Path) {
-		return d.servicesEditGuard.ServeHTTP(w, r, next, username)
-	}
-
-	return next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r)
+	})
 }

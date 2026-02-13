@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"regexp"
 
-	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/cego/caddy-docker-api-auth/internal"
 	"github.com/moby/moby/client"
 	"go.uber.org/zap"
@@ -61,14 +60,14 @@ func (n *ServicesEdit) findNetworkName(networkID string) string {
 	return inspect.Name
 }
 
-func (n *ServicesEdit) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler, username string) error {
+func (n *ServicesEdit) ServeHTTP(w http.ResponseWriter, r *http.Request, next http.Handler, username string) {
 	logger := n.logger
 
 	buf, err := io.ReadAll(r.Body)
 	if err != nil {
 		logger.Error("Failed to read request body", zap.Error(err))
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		return err
+		return
 	}
 	rdr1 := io.NopCloser(bytes.NewBuffer(buf))
 	rdr2 := io.NopCloser(bytes.NewBuffer(buf))
@@ -79,27 +78,25 @@ func (n *ServicesEdit) ServeHTTP(w http.ResponseWriter, r *http.Request, next ca
 	if err != nil {
 		logger.Error("Failed to parse json", zap.Error(err))
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		return err
+		return
 	}
 
-	// Block service edit if service name doesn't have correct prefix according to the matched password
 	if !n.acl.MatchServicePrefix(username, service.Name) {
 		msg := "'" + username + "' is not permitted to update or create '" + service.Name + "'"
 		logger.Error(msg)
 		http.Error(w, msg, http.StatusForbidden)
-		return nil
+		return
 	}
 
-	// Block service edit if network target isn't matched in network_attachments
 	for _, network := range service.TaskTemplate.Networks {
 		networkName := n.findNetworkName(network.Target)
 		if !n.acl.MatchNetworkAttachment(username, networkName) {
 			msg := "'" + username + "' is not permitted to attach to network '" + network.Target + "'"
 			logger.Error(msg)
 			http.Error(w, msg, http.StatusForbidden)
-			return nil
+			return
 		}
 	}
 
-	return next.ServeHTTP(w, r)
+	next.ServeHTTP(w, r)
 }
