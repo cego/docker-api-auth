@@ -19,7 +19,7 @@ type ACLDeployer struct {
 }
 
 type ACL struct {
-	Deployers []*ACLDeployer `json:"deployers"`
+	Deployers []*ACLDeployer `yaml:"deployers"`
 }
 
 func NewACL(aclFilePath string) *ACL {
