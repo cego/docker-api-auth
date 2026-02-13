@@ -10,7 +10,9 @@
 :3004 {
         route * {
                 docker_api_auth example/acl.yml
-                reverse_proxy unix//var/run/docker.sock
+                reverse_proxy unix//var/run/docker.sock {
+                        flush_interval -1
+                }
         }
 }
 ```
