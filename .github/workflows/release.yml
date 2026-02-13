@@ -1,0 +1,28 @@
+name: Release binaries
+
+permissions:
+  contents: write
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  releases-amd64:
+    name: Release Go Binary AMD64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Git checkout
+        uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Build
+        run: CGO_ENABLED=0 go build -o docker-api-auth-linux-amd64 .
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: docker-api-auth-linux-amd64

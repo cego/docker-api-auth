@@ -1,0 +1,7 @@
+---
+deployers:
+
+  - username: example
+    password_hash: $2a$12$RvXRFK7mv.Q4M0ltpwLgL.tqBU2KkFV5i58q7AaDhbPOu9.DU.4qK
+    service_prefix: example_
+    network_attachments: [example-shared]
