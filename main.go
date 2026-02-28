@@ -57,9 +57,13 @@ func main() {
 				return net.Dial("unix", *dockerSocket)
 			},
 		},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			logger.Error("proxy error", zap.String("method", r.Method), zap.String("path", r.URL.Path), zap.Error(err))
+			http.Error(w, err.Error(), http.StatusBadGateway)
+		},
 	}
 
-	handler := authMiddleware(logger, acl, servicesEditGuard, proxy)
+	handler := requestLogger(logger, authMiddleware(logger, acl, servicesEditGuard, proxy))
 
 	server := &http.Server{
 		Addr:    *listen,
@@ -78,6 +82,13 @@ func main() {
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		logger.Fatal("server error", zap.Error(err))
 	}
+}
+
+func requestLogger(logger *zap.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logger.Info("request", zap.String("method", r.Method), zap.String("path", r.URL.Path), zap.String("upgrade", r.Header.Get("Upgrade")))
+		next.ServeHTTP(w, r)
+	})
 }
 
 func authMiddleware(logger *zap.Logger, acl *internal.ACL, servicesEditGuard *guards.ServicesEdit, next http.Handler) http.Handler {
